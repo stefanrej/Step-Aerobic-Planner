@@ -1,0 +1,396 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="Step Planer" />
+  <title>Step Aerobic Planer</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
+  <style>
+    * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+    html, body { margin: 0; padding: 0; background: #0F0F14; overscroll-behavior: none; }
+    body { padding-top: env(safe-area-inset-top); padding-bottom: env(safe-area-inset-bottom); }
+    input, button { font-family: inherit; }
+    ::-webkit-scrollbar { display: none; }
+    button:disabled { opacity: 0.4; }
+    .printArea { display: none; }
+    @media print {
+      html, body { background: #fff !important; }
+      .app-ui { max-width: none !important; background: #fff !important; }
+      .app-ui > *:not(.printArea) { display: none !important; }
+      .printArea {
+        display: block !important;
+        color: #111 !important;
+        background: #fff !important;
+        padding: 0 !important;
+        max-width: none !important;
+      }
+      .printArea * { color: #111 !important; }
+    }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+
+  <script type="text/babel">
+    const { useState, useEffect } = React;
+    const STORAGE_KEY = "stepAerobicPlaner_v1";
+
+    const STEP_DB = [
+      { id: "basic",      name: "Basic Step",       counts: 4,  category: "Basis",        emoji: "👟", switchesLeg: false, desc: "Rechts rauf, links rauf, rechts runter, links runter" },
+      { id: "vStep",      name: "V-Step",            counts: 4,  category: "Basis",        emoji: "✌️", switchesLeg: false, desc: "Füße weit auseinander auf den Step, dann eng zurück" },
+      { id: "boxStep",    name: "Box Step",          counts: 4,  category: "Basis",        emoji: "🔲", switchesLeg: false, desc: "Rechts vor den Step, links vor den Step, rechts zurück, links zurück" },
+      { id: "tap",        name: "Tap Up",            counts: 4,  category: "Basis",        emoji: "🦶", switchesLeg: true,  desc: "Rauf tippen, wieder runter, Seite wechseln" },
+      { id: "over",       name: "Over the Top",      counts: 4,  category: "Basis",        emoji: "🔄", switchesLeg: false, desc: "Von einer Seite über den Step zur anderen" },
+      { id: "around",     name: "Around the World",  counts: 16, category: "Basis",        emoji: "🌍", switchesLeg: false, desc: "Einmal komplett um den Step herum" },
+      { id: "lStep",      name: "L-Step",            counts: 8,  category: "Basis",        emoji: "📐", switchesLeg: true,  desc: "Basic seitlich plus Over the Top im rechten Winkel" },
+      { id: "kick",       name: "Kick",              counts: 4,  category: "Kraft",        emoji: "🦶", switchesLeg: true,  desc: "Step drauf, Bein nach vorne kicken" },
+      { id: "lunge",      name: "Lunge",             counts: 4,  category: "Kraft",        emoji: "💪", switchesLeg: false, desc: "Step drauf, Ausfallschritt hinten" },
+      { id: "doubleLunge",name: "Double Lunge",      counts: 8,  category: "Kraft",        emoji: "💪", switchesLeg: false, desc: "Zweimal Ausfallschritt hinten, gleiches Bein" },
+      { id: "tripleLunge",name: "Triple Lunge",      counts: 10, category: "Kraft",        emoji: "💪", switchesLeg: true,  desc: "Dreimal Ausfallschritt hinten, dann Seite wechseln" },
+      { id: "knee",       name: "Knee Lift",         counts: 4,  category: "Kraft",        emoji: "🦵", switchesLeg: true,  desc: "Step drauf, Knie hoch heben" },
+      { id: "kickback",   name: "Kick Back",         counts: 4,  category: "Kraft",        emoji: "⚡", switchesLeg: true,  desc: "Step drauf, Bein nach hinten kicken" },
+      { id: "sideLeg",    name: "Side Leg Lift",     counts: 4,  category: "Kraft",        emoji: "🏋️", switchesLeg: true,  desc: "Step drauf, Bein seitlich heben" },
+      { id: "legCurl",    name: "Leg Curl",          counts: 4,  category: "Kraft",        emoji: "🦵", switchesLeg: true,  desc: "Step drauf, Ferse Richtung Gesäß heben" },
+      { id: "doubleKnee", name: "Double Knee Lift",  counts: 6,  category: "Kraft",        emoji: "🦵", switchesLeg: true,  desc: "Zweimal Knie heben ohne Fuß abzusetzen" },
+      { id: "doubleKneeStomp", name: "Double Knee Lift: Knee Lift + Stomp", counts: 6, category: "Kraft", emoji: "🦵", switchesLeg: true, desc: "Knie heben, dann Stomp, Seite wechseln" },
+      { id: "mambo",      name: "Mambo",             counts: 4,  category: "Tanz",         emoji: "💃", switchesLeg: false, desc: "Cha-cha-cha Bewegung vor dem Step" },
+      { id: "miniMambo",  name: "Mini Mambo",        counts: 6,  category: "Tanz",         emoji: "💃", switchesLeg: false, desc: "Kleine, schnelle Mambo-Variation vor dem Step" },
+      { id: "miniMamboB", name: "Mini Mambo (andere Seite)", counts: 10, category: "Tanz",  emoji: "💃", switchesLeg: false, desc: "Mini Mambo, spiegelverkehrt auf der anderen Seite" },
+      { id: "cha",        name: "Cha-Cha-Cha",       counts: 4,  category: "Tanz",         emoji: "🎵", switchesLeg: true,  desc: "Triple step seitlich" },
+      { id: "pivot",      name: "Pivot Turn",        counts: 4,  category: "Tanz",         emoji: "🔁", switchesLeg: false, desc: "Drehung auf dem Step" },
+      { id: "repeater",   name: "Repeater 3",        counts: 8,  category: "Kondition",    emoji: "🔥", switchesLeg: true,  desc: "Dreimal Knie heben ohne Fuß abzusetzen" },
+      { id: "repKickTapKick", name: "Repeater: Kick Tap Kick", counts: 8, category: "Kondition", emoji: "🔥", switchesLeg: true, desc: "Knie heben, Kick-Tap-Kick, dann Seite wechseln" },
+      { id: "repElvis",   name: "Repeater: Elvis",   counts: 8,  category: "Kondition",    emoji: "🔥", switchesLeg: true,  desc: "Knie heben mit Hüftschwung (Elvis-Twist), dann Seite wechseln" },
+      { id: "repKickBallChange", name: "Repeater: Kick Ball Change", counts: 8, category: "Kondition", emoji: "🔥", switchesLeg: true, desc: "Knie heben, Kick Ball Change, dann Seite wechseln" },
+      { id: "repKnee3Tap", name: "Repeater: Knee Up 3 Taps Knee Up", counts: 8, category: "Kondition", emoji: "🔥", switchesLeg: true, desc: "Knie heben, dreimal tippen, erneut Knie heben, Seite wechseln" },
+      { id: "repPendulum", name: "Repeater: Pendulum", counts: 8, category: "Kondition",   emoji: "🔥", switchesLeg: true,  desc: "Knie heben, Bein pendelt seitlich hin und her, Seite wechseln" },
+      { id: "repStompDoubleKnee", name: "Repeater: Stomp + Double Knee Lift", counts: 8, category: "Kondition", emoji: "🔥", switchesLeg: true, desc: "Stomp, dann zweimal Knie heben, Seite wechseln" },
+      { id: "repDoubleStompKnee", name: "Repeater: Double Stomp + Knee Lift", counts: 8, category: "Kondition", emoji: "🔥", switchesLeg: true, desc: "Zweimal stampfen, dann Knie heben, Seite wechseln" },
+      { id: "diagonal",   name: "Diagonal",          counts: 8,  category: "Kondition",    emoji: "↗️", switchesLeg: true,  desc: "Diagonales Überqueren des Steps" },
+      { id: "straddle",   name: "Straddle",          counts: 4,  category: "Kondition",    emoji: "🏃", switchesLeg: false, desc: "Auf Step, beide Beine runter, zurück hoch" },
+      { id: "corner",     name: "Corner to Corner",  counts: 8,  category: "Kondition",    emoji: "📐", switchesLeg: true,  desc: "Von Ecke zu Ecke über den Step" },
+      { id: "travelSide", name: "Travel Side",       counts: 8,  category: "Choreografie", emoji: "🎭", switchesLeg: true,  desc: "Seitliches Reisen mit Step-Tap Kombination" },
+      { id: "charleston", name: "Charleston",        counts: 8,  category: "Choreografie", emoji: "🕺", switchesLeg: true,  desc: "Charleston-Variation auf dem Step" },
+      { id: "powerMove",  name: "Power Move",        counts: 8,  category: "Choreografie", emoji: "⚡", switchesLeg: true,  desc: "Intensive Kombination mit Sprüngen" },
+      { id: "stomp",      name: "Stomp",             counts: 3,  category: "Basis",        emoji: "👣", switchesLeg: true,  desc: "Kurzes, kräftiges Aufstampfen auf den Step" },
+      { id: "doubleStomp",name: "Double Stomp",      counts: 5,  category: "Basis",        emoji: "👣", switchesLeg: true,  desc: "Zweimal kräftig aufstampfen, Seite wechseln" },
+      { id: "doubleStompSquat", name: "Double Stomp: Squat", counts: 5, category: "Basis",  emoji: "👣", switchesLeg: true,  desc: "Zweimal stampfen, dann Squat, Seite wechseln" },
+      { id: "mamboChaCombo", name: "Mambo + Cha-Cha-Cha + Mambo + Cha-Cha-Cha", counts: 8, category: "Tanz", emoji: "💃", switchesLeg: false, desc: "Kombination aus zwei Mambo- und zwei Cha-Cha-Cha-Phrasen" },
+      { id: "returnStep", name: "Return Step",       counts: 4,  category: "Basis",        emoji: "↩️", switchesLeg: false, desc: "Zurück auf den Boden, Ausgangsposition" },
+      { id: "march2",     name: "Marschieren (2 Counts)", counts: 2, category: "Basis",    emoji: "🚶", switchesLeg: false, desc: "Kurzes Marschieren auf der Stelle, 2 Counts" },
+      { id: "march4",     name: "Marschieren (4 Counts)", counts: 4, category: "Basis",    emoji: "🚶", desc: "Marschieren auf der Stelle, 4 Counts" },
+    ];
+
+    const CATEGORIES = ["Alle", "Basis", "Kraft", "Tanz", "Kondition", "Choreografie"];
+    const COUNTS_PER_BLOCK = 32;
+
+    const CAT_COLORS = {
+      Basis: "#6C63FF", Kraft: "#E94560", Tanz: "#FF6B6B",
+      Kondition: "#F4A261", Choreografie: "#2EC4B6",
+    };
+
+    const getBlockCounts = (block) => block.reduce((sum, s) => sum + s.counts, 0);
+    const countColor = (used, total) => used > total ? "#E94560" : used === total ? "#2EC4B6" : "#aaa";
+
+    const loadSaved = () => {
+      try {
+        const raw = localStorage.getItem(STORAGE_KEY);
+        if (!raw) return null;
+        return JSON.parse(raw);
+      } catch (e) { return null; }
+    };
+
+    function App() {
+      const saved = loadSaved();
+      const [blocks, setBlocks]       = useState(saved?.blocks || [[], [], []]);
+      const [activeBlock, setActive]  = useState(0);
+      const [filterCat, setFilter]    = useState("Alle");
+      const [view, setView]           = useState("plan");
+      const [planName, setPlanName]   = useState(saved?.planName || "Meine Stunde");
+      const [toast, setToast]         = useState(null);
+
+      const showToast = (msg) => { setToast(msg); setTimeout(() => setToast(null), 2200); };
+
+      useEffect(() => {
+        try {
+          localStorage.setItem(STORAGE_KEY, JSON.stringify({ blocks, planName }));
+        } catch (e) { /* Speicher voll oder nicht verfügbar */ }
+      }, [blocks, planName]);
+
+      const handlePrint = () => {
+        showToast("PDF wird vorbereitet …");
+        setTimeout(() => window.print(), 200);
+      };
+
+      const addStep = (step) => {
+        const used = getBlockCounts(blocks[activeBlock]);
+        if (used + step.counts > COUNTS_PER_BLOCK) {
+          showToast(`Noch ${COUNTS_PER_BLOCK - used} Counts frei!`); return;
+        }
+        setBlocks(blocks.map((b, i) => i === activeBlock ? [...b, { ...step, uid: Date.now() + Math.random() }] : b));
+        if (used + step.counts === COUNTS_PER_BLOCK) showToast("Block voll! 🎉");
+      };
+
+      const removeStep = (bi, uid) =>
+        setBlocks(blocks.map((b, i) => i === bi ? b.filter(s => s.uid !== uid) : b));
+
+      const moveStep = (bi, from, dir) => {
+        const b = [...blocks[bi]]; const to = from + dir;
+        if (to < 0 || to >= b.length) return;
+        [b[from], b[to]] = [b[to], b[from]];
+        setBlocks(blocks.map((bl, i) => i === bi ? b : bl));
+      };
+
+      const clearBlock = (i) => setBlocks(blocks.map((b, j) => j === i ? [] : b));
+
+      const filtered = filterCat === "Alle" ? STEP_DB : STEP_DB.filter(s => s.category === filterCat);
+      const totalCounts = blocks.reduce((sum, b) => sum + getBlockCounts(b), 0);
+
+      return (
+        <div style={S.root} className="app-ui">
+          {/* ── Header ── */}
+          <div style={S.header}>
+            <div style={S.headerTop}>
+              <span style={{fontSize:26}}>💃</span>
+              <input style={S.planInput} value={planName} onChange={e => setPlanName(e.target.value)} />
+              <div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:5}}>
+                <button style={S.printBtn} onClick={handlePrint} title="Als PDF speichern / drucken">🖨️ PDF</button>
+                <span style={S.totalBadge}>{totalCounts}/96</span>
+              </div>
+            </div>
+            <div style={S.tabs}>
+              {["plan","library"].map(t => (
+                <button key={t} style={view===t ? S.tabOn : S.tabOff} onClick={() => setView(t)}>
+                  {t === "plan" ? "Planung" : "Schritte"}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* ── Toast ── */}
+          {toast && <div style={S.toast}>{toast}</div>}
+
+          {/* ══════════════ PLAN VIEW ══════════════ */}
+          {view === "plan" && (
+            <div style={S.content}>
+              {/* Block-Tabs */}
+              <div style={S.blockRow}>
+                {[0,1,2].map(i => {
+                  const used = getBlockCounts(blocks[i]);
+                  const pct  = Math.min(100, (used/COUNTS_PER_BLOCK)*100);
+                  const col  = used > COUNTS_PER_BLOCK ? "#E94560" : used === COUNTS_PER_BLOCK ? "#2EC4B6" : "#E94560";
+                  return (
+                    <button key={i} style={activeBlock===i ? S.blockBtnOn : S.blockBtnOff} onClick={() => setActive(i)}>
+                      <span style={{color:"#F0EEF6",fontSize:13,fontWeight:700}}>Block {i+1}</span>
+                      <span style={{fontSize:12,fontWeight:600,color:countColor(used,COUNTS_PER_BLOCK)}}>{used}/{COUNTS_PER_BLOCK}</span>
+                      <div style={S.miniBar}><div style={{...S.miniBarFill,width:`${pct}%`,background:col}}/></div>
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* Aktiver Block */}
+              <div style={S.card}>
+                <div style={S.cardHead}>
+                  <span style={{fontSize:17,fontWeight:800}}>Block {activeBlock+1}</span>
+                  <div style={{display:"flex",alignItems:"center",gap:8}}>
+                    {(() => {
+                      const used = getBlockCounts(blocks[activeBlock]);
+                      return <span style={{...S.pill, background: used>COUNTS_PER_BLOCK?"#E94560":used===COUNTS_PER_BLOCK?"#2EC4B6":"#333"}}>{used}/{COUNTS_PER_BLOCK} Counts</span>;
+                    })()}
+                    <button style={S.clearBtn} onClick={() => clearBlock(activeBlock)}>✕ Leeren</button>
+                  </div>
+                </div>
+                {(() => {
+                  const used = getBlockCounts(blocks[activeBlock]);
+                  const pct  = Math.min(100,(used/COUNTS_PER_BLOCK)*100);
+                  const col  = used>COUNTS_PER_BLOCK?"#E94560":used===COUNTS_PER_BLOCK?"#2EC4B6":"linear-gradient(90deg,#E94560,#FF6B6B)";
+                  return <div style={S.progressBg}><div style={{...S.progressFg,width:`${pct}%`,background:col}}/></div>;
+                })()}
+
+                {blocks[activeBlock].length === 0 ? (
+                  <div style={S.empty}>
+                    <span style={{fontSize:36}}>➕</span>
+                    <p style={{color:"#666",fontSize:14,margin:0}}>Füge Schritte aus der Bibliothek hinzu</p>
+                    <button style={S.goBtn} onClick={() => setView("library")}>Zur Schrittbibliothek →</button>
+                  </div>
+                ) : (
+                  <div>
+                    {blocks[activeBlock].map((step, idx) => (
+                      <div key={step.uid} style={S.stepRow}>
+                        <span style={{color:"#444",fontSize:12,width:16,textAlign:"center"}}>{idx+1}</span>
+                        <span style={{fontSize:18}}>{step.emoji}</span>
+                        <div style={{flex:1,display:"flex",flexDirection:"column",gap:1}}>
+                          <span style={{fontSize:14,fontWeight:600}}>{step.name}</span>
+                          <span style={{fontSize:11,fontWeight:600,color:CAT_COLORS[step.category]||"#aaa"}}>
+                            {step.category}
+                            {step.switchesLeg && <span style={{color:"#F4A261",marginLeft:6}}>🔁</span>}
+                          </span>
+                        </div>
+                        <span style={{fontSize:13,fontWeight:700,color:"#888",minWidth:32,textAlign:"right"}}>{step.counts}ct</span>
+                        <div style={{display:"flex",gap:4}}>
+                          <button style={S.iconBtn} onClick={() => moveStep(activeBlock,idx,-1)} disabled={idx===0}>↑</button>
+                          <button style={S.iconBtn} onClick={() => moveStep(activeBlock,idx,1)} disabled={idx===blocks[activeBlock].length-1}>↓</button>
+                          <button style={{...S.iconBtn,color:"#E94560"}} onClick={() => removeStep(activeBlock,step.uid)}>✕</button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Übersicht */}
+              <div style={S.card}>
+                <div style={{fontSize:11,fontWeight:800,color:"#666",textTransform:"uppercase",letterSpacing:"0.5px",marginBottom:12}}>Stundenübersicht</div>
+                {[0,1,2].map(i => (
+                  <div key={i} style={{display:"flex",alignItems:"flex-start",gap:10,marginBottom:10,paddingBottom:10,borderBottom:"1px solid #1E1E2A"}}>
+                    <span style={{fontSize:13,fontWeight:700,minWidth:54,paddingTop:2}}>Block {i+1}</span>
+                    <div style={{flex:1,display:"flex",flexWrap:"wrap",gap:5}}>
+                      {blocks[i].length === 0
+                        ? <span style={{color:"#444",fontSize:12,fontStyle:"italic"}}>Leer</span>
+                        : blocks[i].map(s => (
+                            <span key={s.uid} style={{fontSize:11,padding:"3px 8px",borderRadius:8,border:`1px solid ${CAT_COLORS[s.category]}`,background:CAT_COLORS[s.category]+"22",whiteSpace:"nowrap"}}>
+                              {s.emoji} {s.name}{s.switchesLeg ? " 🔁" : ""} <span style={{opacity:0.7}}>{s.counts}</span>
+                            </span>
+                          ))
+                      }
+                    </div>
+                    <span style={{fontSize:13,fontWeight:700,minWidth:42,textAlign:"right",paddingTop:2,color:countColor(getBlockCounts(blocks[i]),COUNTS_PER_BLOCK)}}>
+                      {getBlockCounts(blocks[i])}/{COUNTS_PER_BLOCK}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* ══════════════ LIBRARY VIEW ══════════════ */}
+          {view === "library" && (
+            <div style={S.content}>
+              {/* Block-Auswahl Banner */}
+              <div style={{...S.card,display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",padding:"10px 14px"}}>
+                <span style={{fontSize:13,color:"#888"}}>Hinzufügen zu:</span>
+                <div style={{display:"flex",gap:6,flex:1}}>
+                  {[0,1,2].map(i => (
+                    <button key={i} style={activeBlock===i ? S.miniBlockOn : S.miniBlockOff} onClick={() => setActive(i)}>
+                      <span>Block {i+1}</span>
+                      <span style={{color:countColor(getBlockCounts(blocks[i]),COUNTS_PER_BLOCK)}}>{getBlockCounts(blocks[i])}/{COUNTS_PER_BLOCK}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Kategorie-Filter */}
+              <div style={{display:"flex",gap:6,overflowX:"auto",paddingBottom:2}}>
+                {CATEGORIES.map(c => (
+                  <button key={c} style={filterCat===c ? S.catOn : S.catOff} onClick={() => setFilter(c)}>{c}</button>
+                ))}
+              </div>
+              <div style={{fontSize:11,color:"#666",padding:"0 2px"}}>🔁 = Beinwechsel am Ende des Schritts</div>
+
+              {/* Schritt-Karten */}
+              {filtered.map(step => {
+                const used = getBlockCounts(blocks[activeBlock]);
+                const fits = used + step.counts <= COUNTS_PER_BLOCK;
+                return (
+                  <div key={step.id} style={{...S.card,opacity:fits?1:0.45}}>
+                    <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:6}}>
+                      <span style={{fontSize:24}}>{step.emoji}</span>
+                      <div style={{flex:1,display:"flex",flexDirection:"column"}}>
+                        <span style={{fontSize:15,fontWeight:700}}>{step.name}</span>
+                        <span style={{fontSize:11,fontWeight:600,color:CAT_COLORS[step.category]||"#aaa"}}>
+                          {step.category}
+                          {step.switchesLeg
+                            ? <span style={{color:"#F4A261",marginLeft:6}}>🔁 Beinwechsel</span>
+                            : <span style={{color:"#555",marginLeft:6}}>— kein Wechsel</span>}
+                        </span>
+                      </div>
+                      <span style={{fontSize:20,fontWeight:800,color:"#F0EEF6"}}>{step.counts} ct</span>
+                    </div>
+                    <p style={{color:"#888",fontSize:13,margin:"0 0 10px",lineHeight:1.4}}>{step.desc}</p>
+                    <button
+                      style={{width:"100%",border:"none",color:"#fff",fontSize:14,fontWeight:700,padding:"10px",borderRadius:10,cursor:"pointer",background:fits?"linear-gradient(135deg,#E94560,#FF6B6B)":"#333"}}
+                      onClick={() => addStep(step)} disabled={!fits}
+                    >
+                      {fits ? `+ Block ${activeBlock+1}` : "Passt nicht rein"}
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {/* ══════════════ DRUCK-ANSICHT (nur beim Drucken/PDF sichtbar) ══════════════ */}
+          <div className="printArea">
+            <div style={{display:"flex",alignItems:"baseline",justifyContent:"space-between",borderBottom:"2px solid #111",paddingBottom:8,marginBottom:16}}>
+              <h1 style={{fontSize:22,margin:0}}>{planName}</h1>
+              <span style={{fontSize:12}}>Step-Aerobic Choreografie · {totalCounts}/96 Counts</span>
+            </div>
+            {[0,1,2].map(i => (
+              <div key={i} style={{marginBottom:18,pageBreakInside:"avoid"}}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",borderBottom:"1px solid #999",paddingBottom:4,marginBottom:8}}>
+                  <h2 style={{fontSize:16,margin:0}}>Block {i+1}</h2>
+                  <span style={{fontSize:12}}>{getBlockCounts(blocks[i])}/{COUNTS_PER_BLOCK} Counts</span>
+                </div>
+                {blocks[i].length === 0 ? (
+                  <p style={{fontSize:12,fontStyle:"italic",margin:0}}>Leer</p>
+                ) : (
+                  <ol style={{margin:0,paddingLeft:20}}>
+                    {blocks[i].map(s => (
+                      <li key={s.uid} style={{fontSize:13,marginBottom:3}}>
+                        {s.emoji} <strong>{s.name}</strong> — {s.category} · {s.counts} Counts{s.switchesLeg ? " · 🔁 Beinwechsel" : ""}
+                      </li>
+                    ))}
+                  </ol>
+                )}
+              </div>
+            ))}
+            <p style={{fontSize:10,color:"#666",marginTop:24}}>Erstellt mit dem Step-Aerobic Planer</p>
+          </div>
+        </div>
+      );
+    }
+
+    // ── Styles ─────────────────────────────────────────────────────────────────
+    const S = {
+      root: { minHeight:"100vh", background:"#0F0F14", color:"#F0EEF6", fontFamily:"-apple-system,BlinkMacSystemFont,'SF Pro Display',sans-serif", maxWidth:430, margin:"0 auto" },
+      header: { background:"#1A1A24", borderBottom:"1px solid #2A2A38", padding:"14px 16px 0", position:"sticky", top:0, zIndex:100 },
+      headerTop: { display:"flex", alignItems:"center", gap:10, marginBottom:14 },
+      planInput: { flex:1, background:"transparent", border:"none", color:"#F0EEF6", fontSize:18, fontWeight:700, outline:"none" },
+      totalBadge: { background:"#E94560", color:"#fff", fontSize:12, fontWeight:700, padding:"3px 9px", borderRadius:20 },
+      printBtn: { background:"#222230", border:"1px solid #2A2A38", color:"#F0EEF6", fontSize:12, fontWeight:700, padding:"6px 10px", borderRadius:10, cursor:"pointer", whiteSpace:"nowrap" },
+      tabs: { display:"flex" },
+      tabOn:  { flex:1, background:"transparent", border:"none", borderBottom:"2px solid #E94560", color:"#E94560", fontSize:14, fontWeight:700, padding:"10px 0", cursor:"pointer" },
+      tabOff: { flex:1, background:"transparent", border:"none", borderBottom:"2px solid transparent", color:"#555", fontSize:14, fontWeight:600, padding:"10px 0", cursor:"pointer" },
+      toast: { position:"fixed", top:90, left:"50%", transform:"translateX(-50%)", background:"#1E1E2E", color:"#F0EEF6", border:"1px solid #E94560", padding:"10px 20px", borderRadius:12, fontSize:14, fontWeight:600, zIndex:999, whiteSpace:"nowrap", boxShadow:"0 8px 24px rgba(0,0,0,0.5)" },
+      content: { padding:"14px", paddingBottom:48, display:"flex", flexDirection:"column", gap:12 },
+      blockRow: { display:"flex", gap:10 },
+      blockBtnOff: { flex:1, background:"#1A1A24", border:"1px solid #2A2A38", borderRadius:12, padding:"10px 6px 8px", cursor:"pointer", display:"flex", flexDirection:"column", alignItems:"center", gap:3 },
+      blockBtnOn:  { flex:1, background:"#1E1E2E", border:"1px solid #E94560", borderRadius:12, padding:"10px 6px 8px", cursor:"pointer", display:"flex", flexDirection:"column", alignItems:"center", gap:3, boxShadow:"0 0 12px rgba(233,69,96,0.3)" },
+      miniBar: { width:"100%", height:3, background:"#2A2A38", borderRadius:2, overflow:"hidden" },
+      miniBarFill: { height:"100%", borderRadius:2 },
+      card: { background:"#1A1A24", border:"1px solid #2A2A38", borderRadius:16, overflow:"hidden", padding:"14px 16px" },
+      cardHead: { display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:10 },
+      pill: { fontSize:12, fontWeight:700, color:"#fff", padding:"3px 10px", borderRadius:20 },
+      clearBtn: { background:"transparent", border:"1px solid #333", color:"#888", fontSize:12, padding:"3px 9px", borderRadius:8, cursor:"pointer" },
+      progressBg: { height:4, background:"#2A2A38", marginBottom:2, marginLeft:-16, marginRight:-16 },
+      progressFg: { height:"100%", transition:"width .3s" },
+      empty: { display:"flex", flexDirection:"column", alignItems:"center", gap:8, padding:"28px 0" },
+      goBtn: { background:"linear-gradient(135deg,#E94560,#FF6B6B)", border:"none", color:"#fff", fontSize:14, fontWeight:700, padding:"10px 22px", borderRadius:12, cursor:"pointer", marginTop:4 },
+      stepRow: { display:"flex", alignItems:"center", gap:8, padding:"9px 0", borderBottom:"1px solid #1E1E2A" },
+      iconBtn: { background:"#222230", border:"none", color:"#aaa", fontSize:13, width:26, height:26, borderRadius:6, cursor:"pointer" },
+      miniBlockOff: { flex:1, background:"#222230", border:"1px solid #2A2A38", color:"#aaa", fontSize:11, fontWeight:600, padding:"5px 4px", borderRadius:8, cursor:"pointer", display:"flex", flexDirection:"column", alignItems:"center", gap:1 },
+      miniBlockOn:  { flex:1, background:"#1E1E2E", border:"1px solid #E94560", color:"#F0EEF6", fontSize:11, fontWeight:700, padding:"5px 4px", borderRadius:8, cursor:"pointer", display:"flex", flexDirection:"column", alignItems:"center", gap:1, boxShadow:"0 0 8px rgba(233,69,96,0.2)" },
+      catOff: { background:"#1A1A24", border:"1px solid #2A2A38", color:"#888", fontSize:12, fontWeight:600, padding:"7px 14px", borderRadius:20, cursor:"pointer", whiteSpace:"nowrap", flexShrink:0 },
+      catOn:  { background:"#E94560", border:"1px solid #E94560", color:"#fff", fontSize:12, fontWeight:700, padding:"7px 14px", borderRadius:20, cursor:"pointer", whiteSpace:"nowrap", flexShrink:0 },
+    };
+
+    ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+  </script>
+</body>
+</html>
